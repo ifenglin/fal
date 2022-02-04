@@ -63,12 +63,20 @@ class DbtModel:
     def __hash__(self) -> int:
         return self.unique_id.__hash__()
 
-    def get_script_paths(self, keyword, project_dir) -> List[Path]:
-        return normalize_directories(project_dir, self.get_scripts(keyword))
+    def get_script_paths(self, keyword, project_dir, before) -> List[Path]:
+        return normalize_directories(project_dir, self.get_scripts(keyword, before))
 
-    def get_scripts(self, keyword) -> List[Path]:
+    def get_scripts(self, keyword, before) -> List[Path]:
         # sometimes `scripts` can *be* there and still be None
-        return self.meta[keyword].get("scripts") or []
+        scripts_node = self.meta[keyword].get("scripts")
+        if not scripts_node:
+            return []
+        if before:
+            return scripts_node.get("before") or []
+        if isinstance(scripts_node, list):
+            return scripts_node
+        else:
+            return scripts_node.get("after") or []
 
     def set_status(self, status: str):
         self.status = status
@@ -436,13 +444,14 @@ class FalProject:
             filter(lambda model: keyword in model.meta, self._faldbt.list_models())
         )
 
-    def get_filtered_models(self, all, selected) -> List[DbtModel]:
+    def get_filtered_models(self, all, selected, before) -> List[DbtModel]:
         selected_ids = _models_ids(self._faldbt._compile_task._flattened_nodes)
         filtered_models: List[DbtModel] = []
 
         if (
             not all
             and not selected
+            and not before
             and self._faldbt._run_results.nativeRunResult is None
         ):
             raise parse.FalParseError(
@@ -452,6 +461,9 @@ class FalProject:
         for node in self._get_models_with_keyword(self.keyword):
             if selected:
                 if node.unique_id in selected_ids:
+                    filtered_models.append(node)
+            elif before:
+                if node.get_scripts(self.keyword, before) != []:
                     filtered_models.append(node)
             elif all:
                 filtered_models.append(node)

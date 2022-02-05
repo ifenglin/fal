@@ -1,42 +1,39 @@
 # NOTE: INSPIRED IN https://github.com/dbt-labs/dbt-core/blob/43edc887f97e359b02b6317a9f91898d3d66652b/core/dbt/lib.py
-import six
-from datetime import datetime
 from dataclasses import dataclass
-from uuid import uuid4
+from datetime import datetime
 from typing import List, Tuple, Union
+from uuid import uuid4
 
-import dbt.version
-import dbt.semver
-import dbt.flags as flags
 import dbt.adapters.factory as adapters_factory
+import dbt.flags as flags
+import dbt.semver
+import dbt.version
+import pandas as pd
+import six
+import sqlalchemy
 from dbt.config.runtime import RuntimeConfig
 from dbt.contracts.connection import AdapterResponse
 from dbt.contracts.graph.manifest import Manifest
-from dbt.parser.manifest import process_node
 from dbt.logger import GLOBAL_LOGGER as logger
-
-from . import parse
-
-import pandas as pd
+from dbt.parser.manifest import process_node
 from pandas.io import sql as pdsql
-
-import sqlalchemy
-from sqlalchemy.sql.ddl import CreateTable
 from sqlalchemy.sql import Insert
+from sqlalchemy.sql.ddl import CreateTable
 from sqlalchemy.sql.schema import MetaData
 
+from . import parse
 
 DBT_V1 = dbt.semver.VersionSpecifier.from_version_string("1.0.0")
 DBT_VCURRENT = dbt.version.get_installed_version()
 
 if DBT_VCURRENT.compare(DBT_V1) >= 0:
-    from dbt.parser.sql import SqlBlockParser
     from dbt.contracts.graph.parsed import ParsedModelNode, ParsedSourceDefinition
-    from dbt.contracts.sql import ResultTable, RemoteRunResult
+    from dbt.contracts.sql import RemoteRunResult, ResultTable
+    from dbt.parser.sql import SqlBlockParser
 else:
-    from faldbt.cp.parser.sql import SqlBlockParser
     from faldbt.cp.contracts.graph.parsed import ParsedModelNode, ParsedSourceDefinition
-    from faldbt.cp.contracts.sql import ResultTable, RemoteRunResult
+    from faldbt.cp.contracts.sql import RemoteRunResult, ResultTable
+    from faldbt.cp.parser.sql import SqlBlockParser
 
 
 @dataclass
@@ -179,6 +176,7 @@ def write_target(
     project_path: str,
     profiles_dir: str,
     target: Union[ParsedModelNode, ParsedSourceDefinition],
+    on_conflict_do_update: dict,
 ) -> RemoteRunResult:
     adapter = _get_adapter(project_path, profiles_dir)
 
@@ -207,6 +205,9 @@ def write_target(
         .values(row_dicts)
         .compile(bind=engine, compile_kwargs={"literal_binds": True})
     )
+
+    if on_conflict_do_update:
+        insert_stmt = insert_stmt.on_conflict_do_update(**on_conflict_do_update)
 
     _, result = _execute_sql(
         manifest, project_path, profiles_dir, six.text_type(insert_stmt).strip()

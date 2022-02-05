@@ -1,29 +1,26 @@
 import os
 import re
+import uuid
 from dataclasses import dataclass, field
-from typing import Dict, List, List, Any, Optional, Tuple, TypeVar, Sequence, Union
+from decimal import Decimal
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Sequence, Tuple, TypeVar, Union
 
-from dbt.node_types import NodeType
-from dbt.config import RuntimeConfig
-from dbt.contracts.graph.parsed import ParsedModelNode, ParsedSourceDefinition
-from dbt.contracts.graph.manifest import Manifest, MaybeNonSource, MaybeParsedSource
-from dbt.contracts.results import RunResultsArtifact, RunResultOutput
-from dbt.logger import GLOBAL_LOGGER as logger
-from dbt.task.compile import CompileTask
 import dbt.tracking
-
-from . import parse
-from . import lib
-from fal.feature_store.feature import Feature
-
 import firebase_admin
+import pandas as pd
+from dbt.config import RuntimeConfig
+from dbt.contracts.graph.manifest import Manifest, MaybeNonSource, MaybeParsedSource
+from dbt.contracts.graph.parsed import ParsedModelNode, ParsedSourceDefinition
+from dbt.contracts.results import RunResultOutput, RunResultsArtifact
+from dbt.logger import GLOBAL_LOGGER as logger
+from dbt.node_types import NodeType
+from dbt.task.compile import CompileTask
+from fal.feature_store.feature import Feature
 from firebase_admin import firestore
 from google.cloud.firestore import Client as FirestoreClient
-import uuid
 
-from decimal import Decimal
-import pandas as pd
+from . import lib, parse
 
 
 class FalGeneralException(Exception):
@@ -56,8 +53,8 @@ class DbtTest:
             # node.test_metadata.kwargs looks like this:
             # kwargs={'column_name': 'y', 'model': "{{ get_where_subquery(ref('boston')) }}"}
             # and we want to get 'boston' is the model name that we want extract
-            self.model = re.findall(r"'([^']+)'", node.test_metadata.kwargs['model'])[0]
-            self.column = node.test_metadata.kwargs['column_name']
+            self.model = re.findall(r"'([^']+)'", node.test_metadata.kwargs["model"])[0]
+            self.column = node.test_metadata.kwargs["column_name"]
 
     def set_status(self, status: str):
         self.status = status
@@ -150,6 +147,7 @@ class CompileArgs:
     state: any
     single_threaded: bool
 
+
 @dataclass(init=False)
 class FalDbt:
     project_dir: str
@@ -201,10 +199,10 @@ class FalDbt:
             parse.get_dbt_results(self.project_dir, self._config)
         )
 
-        self.method = 'run'
+        self.method = "run"
 
         if self._run_results.nativeRunResult:
-            self.method = self._run_results.nativeRunResult.args['rpc_method']
+            self.method = self._run_results.nativeRunResult.args["rpc_method"]
 
         self._model_status_map = dict(
             map(
@@ -356,10 +354,16 @@ class FalDbt:
         )
 
     def write_to_source(
-        self, data: pd.DataFrame, target_source_name: str, target_table_name: str
+        self,
+        data: pd.DataFrame,
+        target_source_name: str,
+        target_table_name: str,
+        on_conflict_do_update={},
     ):
         """
         Write a pandas.DataFrame to a dbt source automagically.
+        on_conflict_do_update is a dict of arguments passed to Insert.on_conflict_do_update if specified. For the availabe arguments,
+        read https://docs.sqlalchemy.org/en/13/dialects/postgresql.html#sqlalchemy.dialects.postgresql.Insert.on_conflict_do_update
         """
 
         target_source: MaybeParsedSource = self._manifest.nativeManifest.resolve_source(
@@ -377,6 +381,7 @@ class FalDbt:
             self.project_dir,
             self.profiles_dir,
             target_source,
+            on_conflict_do_update,
         )
 
     def write_to_firestore(self, df: pd.DataFrame, collection: str, key_column: str):
@@ -491,14 +496,16 @@ class FalProject:
             filter(lambda model: keyword in model.meta, self._faldbt.list_models())
         )
 
-    def _map_tests_to_models(self, models: List[DbtModel], tests: List[DbtTest]) -> List[DbtModel]:
+    def _map_tests_to_models(
+        self, models: List[DbtModel], tests: List[DbtTest]
+    ) -> List[DbtModel]:
         for model in models:
             model_status = self.get_model_status(model)
             for test in tests:
                 if test.model == model.name:
                     model.tests.append(test)
-                    if test.status != 'skipped' and model_status == 'skipped':
-                        model.set_status('tested')
+                    if test.status != "skipped" and model_status == "skipped":
+                        model.set_status("tested")
         return models
 
     def get_filtered_models(self, all, selected) -> List[DbtModel]:
@@ -515,7 +522,7 @@ class FalProject:
             )
 
         models = self._get_models_with_keyword(self.keyword)
-        if self._faldbt.method in ['test', 'build']:
+        if self._faldbt.method in ["test", "build"]:
             tests = self._faldbt.list_tests()
             models = self._map_tests_to_models(models, tests)
 

@@ -200,14 +200,12 @@ def write_target(
             manifest, project_path, profiles_dir, six.text_type(create_stmt).strip()
         )
 
-    insert_stmt = (
-        Insert(alchemy_table)
-        .values(row_dicts)
-        .compile(bind=engine, compile_kwargs={"literal_binds": True})
-    )
+    insert = Insert(alchemy_table).values(row_dicts)
 
     if on_conflict_do_update:
-        insert_stmt = insert_stmt.on_conflict_do_update(**on_conflict_do_update)
+        insert = insert.on_conflict_do_update(**on_conflict_do_update)
+
+    insert_stmt = insert.compile(bind=engine, compile_kwargs={"literal_binds": True})
 
     _, result = _execute_sql(
         manifest, project_path, profiles_dir, six.text_type(insert_stmt).strip()

@@ -17,7 +17,7 @@ from dbt.contracts.graph.manifest import Manifest
 from dbt.logger import GLOBAL_LOGGER as logger
 from dbt.parser.manifest import process_node
 from pandas.io import sql as pdsql
-from sqlalchemy.sql import Insert
+from sqlalchemy.sql import Insert, Update
 from sqlalchemy.sql.ddl import CreateTable
 from sqlalchemy.sql.schema import MetaData
 
@@ -176,7 +176,7 @@ def write_target(
     project_path: str,
     profiles_dir: str,
     target: Union[ParsedModelNode, ParsedSourceDefinition],
-    on_conflict_do_update: dict,
+    do_update: dict,
 ) -> RemoteRunResult:
     adapter = _get_adapter(project_path, profiles_dir)
 
@@ -200,15 +200,15 @@ def write_target(
             manifest, project_path, profiles_dir, six.text_type(create_stmt).strip()
         )
 
-    insert = Insert(alchemy_table).values(row_dicts)
+    if do_update:
+        action = Update(alchemy_table).values(row_dicts)
+    else:
+        action = Insert(alchemy_table).values(row_dicts)
 
-    if on_conflict_do_update:
-        insert = insert.on_conflict_do_update(**on_conflict_do_update)
-
-    insert_stmt = insert.compile(bind=engine, compile_kwargs={"literal_binds": True})
+    action_stmt = action.compile(bind=engine, compile_kwargs={"literal_binds": True})
 
     _, result = _execute_sql(
-        manifest, project_path, profiles_dir, six.text_type(insert_stmt).strip()
+        manifest, project_path, profiles_dir, six.text_type(action_stmt).strip()
     )
     return result
 

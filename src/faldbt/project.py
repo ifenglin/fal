@@ -358,12 +358,10 @@ class FalDbt:
         data: pd.DataFrame,
         target_source_name: str,
         target_table_name: str,
-        on_conflict_do_update={},
+        do_update=False,
     ):
         """
         Write a pandas.DataFrame to a dbt source automagically.
-        on_conflict_do_update is a dict of arguments passed to Insert.on_conflict_do_update if specified. For the availabe arguments,
-        read https://docs.sqlalchemy.org/en/13/dialects/postgresql.html#sqlalchemy.dialects.postgresql.Insert.on_conflict_do_update
         """
 
         target_source: MaybeParsedSource = self._manifest.nativeManifest.resolve_source(
@@ -381,7 +379,7 @@ class FalDbt:
             self.project_dir,
             self.profiles_dir,
             target_source,
-            on_conflict_do_update,
+            do_update,
         )
 
     def write_to_firestore(self, df: pd.DataFrame, collection: str, key_column: str):
